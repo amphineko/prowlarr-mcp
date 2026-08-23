@@ -1,0 +1,94 @@
+# prowlarr-mcp
+
+An MCP server for [Prowlarr](https://github.com/Prowlarr/Prowlarr).
+
+## Setup
+
+```sh
+cd prowlarr-mcp
+uv sync
+cp .env.example .env
+```
+
+Set `PROWLARR_API_KEY` in `.env`. The API key is available in Prowlarr under
+Settings → General → Security.
+
+Configuration:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PROWLARR_URL` | `http://localhost:9696` | Prowlarr base URL, including any URL base path |
+| `PROWLARR_API_KEY` | required | Prowlarr API key |
+| `PROWLARR_TIMEOUT_SECONDS` | `60` | HTTP timeout, greater than 0 and at most 300 seconds |
+| `PROWLARR_MAX_RESULTS` | `100` | Hard upper bound accepted by `limit` |
+
+## Run
+
+```sh
+uv run prowlarr-mcp
+```
+
+Example Codex/OpenCode-style stdio configuration:
+
+```json
+{
+  "command": "uv",
+  "args": [
+    "--directory",
+    "/path/to/prowlarr-mcp",
+    "run",
+    "prowlarr-mcp"
+  ]
+}
+```
+
+## Tool
+
+`search_releases` accepts:
+
+- `query`: text query; an empty string requests recent releases.
+- `search_type`: `search`, `tvsearch`, `movie`, `music`, or `book`.
+- `indexer_ids`: optional Prowlarr indexer IDs.
+- `categories`: optional Newznab category IDs.
+- `limit`: number of results, default 20 and capped by configuration.
+- `offset`: non-negative result offset.
+
+The response is intentionally smaller than Prowlarr's full `ReleaseResource`,
+but retains `indexer_id` and `guid` for a future download-submission workflow.
+Prowlarr may apply `limit` independently to several indexers, so the MCP server
+also enforces it on the combined response. `truncated` means that the MCP server
+discarded part of the response it received; it is not a `has_more` pagination
+indicator and cannot prove whether Prowlarr has additional results.
+
+## Roadmap
+
+- [x] **v0.1:** Search releases through configured Prowlarr indexers.
+- [ ] Discover available indexers and search categories.
+- [ ] Submit a selected release to a configured download client.
+- [ ] Inspect Prowlarr health, indexer status, and search history.
+
+## Testing with the MCP client
+
+The repository includes a generic stdio client for launching the server and
+calling one tool:
+
+```sh
+uv run src/prowlarr_mcp/scripts/mcp_client.py \
+  --command "uv run prowlarr-mcp" \
+  --method "search_releases" \
+  --arguments '{"query": "yani neko"}'
+```
+
+Use `--cwd` when the server command must run from a different directory, and
+`--timeout` to override the default 60-second tool-call timeout. The script
+prints structured tool output as JSON and exits non-zero for invalid input,
+connection failures, or MCP tool errors.
+
+## Development
+
+```sh
+uv run ruff format --check .
+uv run ruff check .
+uv run pyrefly check
+uv run python -m unittest discover -s tests
+```
