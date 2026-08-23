@@ -8,6 +8,7 @@ from fastmcp.client.transports import FastMCPTransport
 from pydantic import SecretStr
 
 from prowlarr_mcp.config import Settings
+from prowlarr_mcp.models import SearchResults, SearchType
 from prowlarr_mcp.server import create_server
 
 
@@ -81,15 +82,14 @@ class SearchE2ETest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(structured)
         if structured is None:
             self.fail("search_releases must return structured content")
-        self.assertEqual(structured["query"], "yani neko")
-        self.assertEqual(structured["search_type"], "tvsearch")
-        self.assertEqual(structured["returned"], 1)
-        self.assertTrue(structured["truncated"])
-        self.assertEqual(len(structured["releases"]), 1)
-        self.assertEqual(structured["releases"][0]["guid"], "release-1")
-        self.assertEqual(structured["releases"][0]["title"], "First Release")
-        self.assertEqual(structured["releases"][0]["size_bytes"], 123456)
-        self.assertEqual(
-            structured["releases"][0]["categories"],
-            [{"id": 5070, "name": "TV/Anime"}],
-        )
+        output = SearchResults.model_validate(structured)
+        self.assertEqual(output.query, "yani neko")
+        self.assertEqual(output.search_type, SearchType.TV)
+        self.assertEqual(output.returned, 1)
+        self.assertTrue(output.truncated)
+        self.assertEqual(len(output.releases), 1)
+        self.assertEqual(output.releases[0].guid, "release-1")
+        self.assertEqual(output.releases[0].title, "First Release")
+        self.assertEqual(output.releases[0].size_bytes, 123456)
+        self.assertEqual(output.releases[0].categories[0].id, 5070)
+        self.assertEqual(output.releases[0].categories[0].name, "TV/Anime")
