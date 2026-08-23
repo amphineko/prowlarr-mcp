@@ -42,7 +42,16 @@ Example Codex/OpenCode-style stdio configuration:
 }
 ```
 
-## Tool
+## Tools
+
+`list_indexers` lists configured indexers and their safe, search-relevant
+capabilities. It omits disabled indexers by default; pass `enabled_only=false`
+to include them. Each result includes supported search types and category IDs,
+without provider configuration fields or credentials.
+
+`list_categories` returns Prowlarr's hierarchical search category taxonomy.
+Use these category IDs with `search_releases`. Category ID `0` is valid in
+Prowlarr's taxonomy and is accepted by the search tool.
 
 `search_releases` accepts:
 
@@ -63,7 +72,7 @@ indicator and cannot prove whether Prowlarr has additional results.
 ## Roadmap
 
 - [x] **v0.1:** Search releases through configured Prowlarr indexers.
-- [ ] Discover available indexers and search categories.
+- [x] Discover available indexers and search categories.
 - [ ] Submit a selected release to a configured download client.
 - [ ] Inspect Prowlarr health, indexer status, and search history.
 

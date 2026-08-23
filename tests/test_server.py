@@ -28,7 +28,7 @@ class TrackingTransport(httpx.AsyncBaseTransport):
 
 
 class McpServerTest(unittest.IsolatedAsyncioTestCase):
-    async def test_server_exposes_only_read_only_search(self) -> None:
+    async def test_server_exposes_only_read_only_tools(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json=[])
 
@@ -42,8 +42,12 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
 
         async with Client(server) as client:
             tools = await client.list_tools()
-            self.assertEqual([tool.name for tool in tools], ["search_releases"])
-            schema = tools[0].inputSchema["properties"]
+            tools_by_name = {tool.name: tool for tool in tools}
+            self.assertEqual(
+                set(tools_by_name),
+                {"search_releases", "list_indexers", "list_categories"},
+            )
+            schema = tools_by_name["search_releases"].inputSchema["properties"]
             self.assertEqual(schema["limit"]["minimum"], 1)
             self.assertEqual(schema["limit"]["maximum"], 1000)
             self.assertEqual(schema["offset"]["minimum"], 0)
@@ -51,11 +55,23 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
                 schema["indexer_ids"]["anyOf"][0]["items"]["exclusiveMinimum"],
                 0,
             )
-            annotations = tools[0].annotations
-            self.assertIsNotNone(annotations)
-            if annotations is None:
-                self.fail("search_releases must declare tool annotations")
-            self.assertTrue(annotations.readOnlyHint)
+            self.assertEqual(
+                schema["categories"]["anyOf"][0]["items"]["minimum"],
+                0,
+            )
+            self.assertTrue(
+                tools_by_name["list_indexers"].inputSchema["properties"][
+                    "enabled_only"
+                ]["default"]
+            )
+            for tool in tools:
+                annotations = tool.annotations
+                self.assertIsNotNone(annotations)
+                if annotations is None:
+                    self.fail(f"{tool.name} must declare tool annotations")
+                self.assertTrue(annotations.readOnlyHint)
+                self.assertFalse(annotations.destructiveHint)
+                self.assertTrue(annotations.idempotentHint)
 
             result = await client.call_tool("search_releases", {"query": "anime"})
             self.assertFalse(result.is_error)
@@ -66,6 +82,17 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(structured["returned"], 0)
             self.assertFalse(structured["truncated"])
             self.assertEqual(structured["releases"], [])
+
+            indexers = await client.call_tool("list_indexers", {})
+            self.assertFalse(indexers.is_error)
+            self.assertEqual(indexers.structured_content, {"total": 0, "indexers": []})
+
+            categories = await client.call_tool("list_categories", {})
+            self.assertFalse(categories.is_error)
+            self.assertEqual(
+                categories.structured_content,
+                {"total": 0, "categories": []},
+            )
 
             invalid = await client.call_tool(
                 "search_releases",

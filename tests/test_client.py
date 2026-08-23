@@ -41,6 +41,35 @@ def release_payload() -> dict[str, object]:
     }
 
 
+def indexer_payload() -> dict[str, object]:
+    return {
+        "id": 7,
+        "name": "Example Indexer",
+        "enable": True,
+        "protocol": "torrent",
+        "privacy": "private",
+        "priority": 25,
+        "supportsSearch": True,
+        "supportsPagination": False,
+        "capabilities": {
+            "supportsRawSearch": True,
+            "searchParams": [{"name": "q"}],
+            "tvSearchParams": [{"name": "season"}],
+            "categories": [{"id": 5000, "name": "TV"}],
+        },
+        "fields": [{"name": "apiKey", "value": "upstream-secret"}],
+    }
+
+
+def category_payload() -> dict[str, object]:
+    return {
+        "id": 5000,
+        "name": "TV",
+        "description": "Television",
+        "subCategories": [{"id": 5070, "name": "TV/Anime"}],
+    }
+
+
 def failing_transport(
     error_type: type[httpx.RequestError],
 ) -> httpx.MockTransport:
@@ -79,6 +108,70 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(releases), 1)
         self.assertEqual(releases[0].protocol, DownloadProtocol.TORRENT)
         self.assertEqual(releases[0].guid, "release-guid")
+
+    async def test_lists_indexers(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(
+                request.url,
+                httpx.URL("http://prowlarr.test/base/api/v1/indexer"),
+            )
+            return httpx.Response(200, json=[indexer_payload()])
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        indexers = await client.list_indexers()
+
+        self.assertEqual(len(indexers), 1)
+        self.assertEqual(indexers[0].id, 7)
+        categories = indexers[0].capabilities.categories
+        self.assertIsNotNone(categories)
+        if categories is None:
+            self.fail("indexer response must preserve capability categories")
+        self.assertEqual(categories[0].id, 5000)
+        self.assertFalse(hasattr(indexers[0], "fields"))
+
+    async def test_lists_categories(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(
+                request.url,
+                httpx.URL("http://prowlarr.test/base/api/v1/indexer/categories"),
+            )
+            return httpx.Response(200, json=[category_payload()])
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        categories = await client.list_categories()
+
+        self.assertEqual(len(categories), 1)
+        subcategories = categories[0].sub_categories
+        self.assertIsNotNone(subcategories)
+        if subcategories is None:
+            self.fail("category response must preserve subcategories")
+        self.assertEqual(subcategories[0].id, 5070)
+
+    async def test_invalid_indexer_response_is_reported(self) -> None:
+        async def handler(_: httpx.Request) -> httpx.Response:
+            malformed = indexer_payload()
+            del malformed["id"]
+            return httpx.Response(200, json=[malformed])
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        with self.assertRaisesRegex(ProwlarrResponseError, "invalid indexer"):
+            await client.list_indexers()
+
+    async def test_invalid_category_response_is_reported(self) -> None:
+        async def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[{"name": "Missing ID"}])
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        with self.assertRaisesRegex(ProwlarrResponseError, "invalid category"):
+            await client.list_categories()
 
     async def test_authentication_error_does_not_include_api_key(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:

@@ -21,6 +21,12 @@ class DownloadProtocol(StrEnum):
     TORRENT = "torrent"
 
 
+class IndexerPrivacy(StrEnum):
+    PUBLIC = "public"
+    SEMI_PRIVATE = "semiPrivate"
+    PRIVATE = "private"
+
+
 class ApiModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -32,6 +38,37 @@ class ApiModel(BaseModel):
 class ApiCategory(ApiModel):
     id: int
     name: str | None = None
+
+
+class ApiIndexerCategory(ApiModel):
+    id: int
+    name: str | None = None
+    description: str | None = None
+    sub_categories: list[ApiIndexerCategory] | None = None
+
+
+class ApiIndexerCapabilities(ApiModel):
+    limits_max: int | None = None
+    limits_default: int | None = None
+    categories: list[ApiIndexerCategory] | None = None
+    supports_raw_search: bool = False
+    search_params: list[object] | None = None
+    tv_search_params: list[object] | None = None
+    movie_search_params: list[object] | None = None
+    music_search_params: list[object] | None = None
+    book_search_params: list[object] | None = None
+
+
+class ApiIndexer(ApiModel):
+    id: int
+    name: str
+    enable: bool = False
+    protocol: DownloadProtocol = DownloadProtocol.UNKNOWN
+    privacy: IndexerPrivacy | None = None
+    priority: int = 25
+    supports_search: bool = False
+    supports_pagination: bool = False
+    capabilities: ApiIndexerCapabilities = Field(default_factory=ApiIndexerCapabilities)
 
 
 class ApiRelease(ApiModel):
@@ -53,6 +90,35 @@ class ApiRelease(ApiModel):
 class Category(BaseModel):
     id: int
     name: str | None = None
+
+
+class SearchCategory(BaseModel):
+    id: int
+    name: str | None
+    subcategories: list[SearchCategory]
+
+
+class IndexerSummary(BaseModel):
+    id: int
+    name: str
+    enabled: bool
+    protocol: DownloadProtocol
+    privacy: IndexerPrivacy | None
+    priority: int
+    supports_search: bool
+    supports_pagination: bool
+    search_types: list[SearchType]
+    category_ids: list[int]
+
+
+class IndexerResults(BaseModel):
+    total: int
+    indexers: list[IndexerSummary]
+
+
+class CategoryResults(BaseModel):
+    total: int
+    categories: list[SearchCategory]
 
 
 class ReleaseSummary(BaseModel):

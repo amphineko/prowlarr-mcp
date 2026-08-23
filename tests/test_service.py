@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime
+from typing import override
 
 from prowlarr_mcp.models import (
     ApiCategory,
+    ApiIndexer,
+    ApiIndexerCapabilities,
+    ApiIndexerCategory,
     ApiRelease,
     DownloadProtocol,
+    IndexerPrivacy,
     SearchType,
 )
-from prowlarr_mcp.service import SearchService
+from prowlarr_mcp.service import DiscoveryService, SearchService
 
 
 class StubClient:
@@ -18,6 +23,23 @@ class StubClient:
 
     async def search_releases(self, **_: object) -> list[ApiRelease]:
         return self.releases
+
+
+class StubDiscoveryClient:
+    def __init__(
+        self,
+        *,
+        indexers: list[ApiIndexer],
+        categories: list[ApiIndexerCategory],
+    ) -> None:
+        self.indexers = indexers
+        self.categories = categories
+
+    async def list_indexers(self) -> list[ApiIndexer]:
+        return self.indexers
+
+    async def list_categories(self) -> list[ApiIndexerCategory]:
+        return self.categories
 
 
 class SearchServiceTest(unittest.IsolatedAsyncioTestCase):
@@ -84,8 +106,11 @@ class SearchServiceTest(unittest.IsolatedAsyncioTestCase):
                 indexer_ids=[0],
             )
 
-        with self.assertRaisesRegex(ValueError, "positive integers"):
+        with self.assertRaisesRegex(ValueError, "non-negative integers"):
             await service.search_releases(categories=[-1])
+
+        result = await service.search_releases(categories=[0])
+        self.assertEqual(result.returned, 0)
 
     async def test_rejects_invalid_pagination(self) -> None:
         service = SearchService(StubClient([]), max_results=100)
@@ -95,3 +120,61 @@ class SearchServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(ValueError, "non-negative"):
             await service.search_releases(offset=-1)
+
+
+class DiscoveryServiceTest(unittest.IsolatedAsyncioTestCase):
+    @override
+    def setUp(self) -> None:
+        category = ApiIndexerCategory(
+            id=5000,
+            name="TV",
+            description="Television",
+            sub_categories=[ApiIndexerCategory(id=5070, name="TV/Anime")],
+        )
+        self.enabled_indexer = ApiIndexer(
+            id=7,
+            name="Example Indexer",
+            enable=True,
+            protocol=DownloadProtocol.TORRENT,
+            privacy=IndexerPrivacy.PRIVATE,
+            supports_search=True,
+            capabilities=ApiIndexerCapabilities(
+                supports_raw_search=True,
+                search_params=[{"name": "q"}],
+                tv_search_params=[{"name": "season"}],
+                categories=[category],
+            ),
+        )
+        self.disabled_indexer = self.enabled_indexer.model_copy(
+            update={"id": 8, "name": "Disabled", "enable": False}
+        )
+        self.service = DiscoveryService(
+            StubDiscoveryClient(
+                indexers=[self.enabled_indexer, self.disabled_indexer],
+                categories=[category],
+            )
+        )
+
+    async def test_maps_enabled_indexer_capabilities(self) -> None:
+        result = await self.service.list_indexers()
+
+        self.assertEqual(result.total, 1)
+        self.assertEqual(result.indexers[0].id, 7)
+        self.assertEqual(
+            result.indexers[0].search_types,
+            [SearchType.SEARCH, SearchType.TV],
+        )
+        self.assertEqual(result.indexers[0].category_ids, [5000, 5070])
+
+    async def test_can_include_disabled_indexers(self) -> None:
+        result = await self.service.list_indexers(enabled_only=False)
+
+        self.assertEqual(result.total, 2)
+        self.assertFalse(result.indexers[1].enabled)
+
+    async def test_maps_category_tree(self) -> None:
+        result = await self.service.list_categories()
+
+        self.assertEqual(result.total, 2)
+        self.assertEqual(result.categories[0].id, 5000)
+        self.assertEqual(result.categories[0].subcategories[0].id, 5070)
