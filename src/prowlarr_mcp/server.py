@@ -13,6 +13,7 @@ from prowlarr_mcp.config import Settings
 from prowlarr_mcp.errors import ProwlarrError
 from prowlarr_mcp.models import (
     CategoryResults,
+    DownloadClientResults,
     IndexerResults,
     SearchResults,
     SearchType,
@@ -45,7 +46,8 @@ def create_server(
         "prowlarr-mcp",
         version=__version__,
         instructions=(
-            "Search releases and inspect search capabilities through Prowlarr."
+            "Search releases and inspect search and download capabilities through "
+            "Prowlarr."
         ),
         lifespan=server_lifespan,
     )
@@ -118,6 +120,29 @@ def create_server(
         """
         try:
             return await discovery_service.list_categories()
+        except ProwlarrError as exc:
+            raise ToolError(str(exc)) from exc
+
+    @mcp.tool(
+        annotations={
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        }
+    )
+    async def list_download_clients(
+        enabled_only: bool = True,
+    ) -> DownloadClientResults:
+        """List safe, submission-relevant details for configured download clients.
+
+        By default, omit disabled clients. Use a returned id as the optional
+        download_client_id when submitting a selected release.
+        """
+        try:
+            return await discovery_service.list_download_clients(
+                enabled_only=enabled_only
+            )
         except ProwlarrError as exc:
             raise ToolError(str(exc)) from exc
 

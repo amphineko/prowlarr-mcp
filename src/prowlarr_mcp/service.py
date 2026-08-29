@@ -3,11 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 from prowlarr_mcp.models import (
+    ApiDownloadClient,
     ApiIndexer,
     ApiIndexerCategory,
     ApiRelease,
     Category,
     CategoryResults,
+    DownloadClientResults,
+    DownloadClientSummary,
     IndexerResults,
     IndexerSummary,
     ReleaseSummary,
@@ -37,6 +40,8 @@ class DiscoveryClient(Protocol):
     async def list_indexers(self) -> list[ApiIndexer]: ...
 
     async def list_categories(self) -> list[ApiIndexerCategory]: ...
+
+    async def list_download_clients(self) -> list[ApiDownloadClient]: ...
 
 
 class SearchService:
@@ -125,6 +130,22 @@ class DiscoveryService:
             categories=categories,
         )
 
+    async def list_download_clients(
+        self,
+        *,
+        enabled_only: bool = True,
+    ) -> DownloadClientResults:
+        download_clients = await self._client.list_download_clients()
+        summaries = [
+            self._to_download_client_summary(download_client)
+            for download_client in download_clients
+            if not enabled_only or download_client.enable
+        ]
+        return DownloadClientResults(
+            total=len(summaries),
+            download_clients=summaries,
+        )
+
     @classmethod
     def _to_indexer_summary(cls, indexer: ApiIndexer) -> IndexerSummary:
         capabilities = indexer.capabilities
@@ -170,6 +191,26 @@ class DiscoveryService:
         return sum(
             1 + cls._category_count(category.sub_categories or [])
             for category in categories
+        )
+
+    @staticmethod
+    def _to_download_client_summary(
+        download_client: ApiDownloadClient,
+    ) -> DownloadClientSummary:
+        return DownloadClientSummary(
+            id=download_client.id,
+            name=download_client.name,
+            enabled=download_client.enable,
+            protocol=download_client.protocol,
+            priority=download_client.priority,
+            supports_categories=download_client.supports_categories,
+            category_ids=list(
+                dict.fromkeys(
+                    category_id
+                    for mapping in download_client.categories
+                    for category_id in mapping.categories or []
+                )
+            ),
         )
 
     @classmethod

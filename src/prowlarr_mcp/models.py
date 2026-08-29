@@ -71,6 +71,20 @@ class ApiIndexer(ApiModel):
     capabilities: ApiIndexerCapabilities = Field(default_factory=ApiIndexerCapabilities)
 
 
+class ApiDownloadClientCategory(ApiModel):
+    categories: list[int] | None = None
+
+
+class ApiDownloadClient(ApiModel):
+    id: int
+    name: str
+    enable: bool = False
+    protocol: DownloadProtocol = DownloadProtocol.UNKNOWN
+    priority: int = 1
+    categories: list[ApiDownloadClientCategory] = Field(default_factory=list)
+    supports_categories: bool = False
+
+
 class ApiRelease(ApiModel):
     guid: str
     indexer_id: int
@@ -119,6 +133,21 @@ class IndexerResults(BaseModel):
 class CategoryResults(BaseModel):
     total: int
     categories: list[SearchCategory]
+
+
+class DownloadClientSummary(BaseModel):
+    id: int
+    name: str
+    enabled: bool
+    protocol: DownloadProtocol
+    priority: int
+    supports_categories: bool
+    category_ids: list[int]
+
+
+class DownloadClientResults(BaseModel):
+    total: int
+    download_clients: list[DownloadClientSummary]
 
 
 class ReleaseSummary(BaseModel):

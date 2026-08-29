@@ -12,6 +12,7 @@ from prowlarr_mcp.errors import (
     response_error,
 )
 from prowlarr_mcp.models import (
+    ApiDownloadClient,
     ApiIndexer,
     ApiIndexerCategory,
     ApiRelease,
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
 _RELEASE_LIST = TypeAdapter(list[ApiRelease])
 _INDEXER_LIST = TypeAdapter(list[ApiIndexer])
 _CATEGORY_LIST = TypeAdapter(list[ApiIndexerCategory])
+_DOWNLOAD_CLIENT_LIST = TypeAdapter(list[ApiDownloadClient])
 
 
 class ProwlarrClient:
@@ -103,6 +105,18 @@ class ProwlarrClient:
         except ValidationError as exc:
             raise ProwlarrResponseError(
                 "Prowlarr returned an invalid category response"
+            ) from exc
+
+    async def list_download_clients(self) -> list[ApiDownloadClient]:
+        response = await self._get(
+            "api/v1/downloadclient",
+            operation="download client discovery",
+        )
+        try:
+            return _DOWNLOAD_CLIENT_LIST.validate_json(response.content)
+        except ValidationError as exc:
+            raise ProwlarrResponseError(
+                "Prowlarr returned an invalid download client response"
             ) from exc
 
     async def _get(

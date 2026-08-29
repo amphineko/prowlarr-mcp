@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from prowlarr_mcp.config import Settings
 from prowlarr_mcp.models import (
     CategoryResults,
+    DownloadClientResults,
     IndexerResults,
     SearchResults,
     SearchType,
@@ -67,6 +68,24 @@ def category_payload() -> dict[str, object]:
         "id": 5000,
         "name": "TV",
         "subCategories": [{"id": 5070, "name": "TV/Anime"}],
+    }
+
+
+def download_client_payload() -> dict[str, object]:
+    return {
+        "id": 3,
+        "name": "Example Download Client",
+        "enable": True,
+        "protocol": "torrent",
+        "priority": 1,
+        "supportsCategories": True,
+        "categories": [
+            {"clientCategory": "anime", "categories": [5000, 5070]},
+        ],
+        "fields": [
+            {"name": "host", "value": "download-client.internal"},
+            {"name": "password", "value": "upstream-secret"},
+        ],
     }
 
 
@@ -142,6 +161,8 @@ class SearchE2ETest(unittest.IsolatedAsyncioTestCase):
                 return httpx.Response(200, json=[indexer_payload()])
             if request.url.path == "/base/api/v1/indexer/categories":
                 return httpx.Response(200, json=[category_payload()])
+            if request.url.path == "/base/api/v1/downloadclient":
+                return httpx.Response(200, json=[download_client_payload()])
             raise AssertionError(f"unexpected Prowlarr path: {request.url.path}")
 
         server = create_server(
@@ -155,6 +176,7 @@ class SearchE2ETest(unittest.IsolatedAsyncioTestCase):
         async with Client(FastMCPTransport(server)) as client:
             indexer_result = await client.call_tool("list_indexers", {})
             category_result = await client.call_tool("list_categories", {})
+            download_client_result = await client.call_tool("list_download_clients", {})
 
         self.assertFalse(indexer_result.is_error)
         indexer_content = indexer_result.structured_content
@@ -177,3 +199,20 @@ class SearchE2ETest(unittest.IsolatedAsyncioTestCase):
         categories = CategoryResults.model_validate(category_content)
         self.assertEqual(categories.total, 2)
         self.assertEqual(categories.categories[0].subcategories[0].id, 5070)
+
+        self.assertFalse(download_client_result.is_error)
+        download_client_content = download_client_result.structured_content
+        self.assertIsNotNone(download_client_content)
+        if download_client_content is None:
+            self.fail("list_download_clients must return structured content")
+        download_clients = DownloadClientResults.model_validate(download_client_content)
+        self.assertEqual(download_clients.total, 1)
+        self.assertEqual(download_clients.download_clients[0].id, 3)
+        self.assertEqual(
+            download_clients.download_clients[0].category_ids,
+            [5000, 5070],
+        )
+        serialized = json.dumps(download_client_content)
+        self.assertNotIn("upstream-secret", serialized)
+        self.assertNotIn("download-client.internal", serialized)
+        self.assertNotIn("anime", serialized)

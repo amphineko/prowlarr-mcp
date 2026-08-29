@@ -70,6 +70,24 @@ def category_payload() -> dict[str, object]:
     }
 
 
+def download_client_payload() -> dict[str, object]:
+    return {
+        "id": 3,
+        "name": "Example Download Client",
+        "enable": True,
+        "protocol": "torrent",
+        "priority": 1,
+        "supportsCategories": True,
+        "categories": [
+            {"clientCategory": "anime", "categories": [5000, 5070]},
+        ],
+        "fields": [
+            {"name": "host", "value": "download-client.internal"},
+            {"name": "password", "value": "upstream-secret"},
+        ],
+    }
+
+
 def failing_transport(
     error_type: type[httpx.RequestError],
 ) -> httpx.MockTransport:
@@ -151,6 +169,24 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
             self.fail("category response must preserve subcategories")
         self.assertEqual(subcategories[0].id, 5070)
 
+    async def test_lists_download_clients(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(
+                request.url,
+                httpx.URL("http://prowlarr.test/base/api/v1/downloadclient"),
+            )
+            return httpx.Response(200, json=[download_client_payload()])
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        download_clients = await client.list_download_clients()
+
+        self.assertEqual(len(download_clients), 1)
+        self.assertEqual(download_clients[0].id, 3)
+        self.assertEqual(download_clients[0].categories[0].categories, [5000, 5070])
+        self.assertFalse(hasattr(download_clients[0], "fields"))
+
     async def test_invalid_indexer_response_is_reported(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
             malformed = indexer_payload()
@@ -172,6 +208,16 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(ProwlarrResponseError, "invalid category"):
             await client.list_categories()
+
+    async def test_invalid_download_client_response_is_reported(self) -> None:
+        async def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[{"name": "Missing ID"}])
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        with self.assertRaisesRegex(ProwlarrResponseError, "invalid download client"):
+            await client.list_download_clients()
 
     async def test_authentication_error_does_not_include_api_key(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
