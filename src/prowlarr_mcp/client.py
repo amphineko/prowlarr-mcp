@@ -5,6 +5,12 @@ from typing import TYPE_CHECKING
 import httpx
 from pydantic import TypeAdapter, ValidationError
 
+from prowlarr_mcp.errors import (
+    ProwlarrAuthenticationError,
+    ProwlarrConnectionError,
+    ProwlarrResponseError,
+    response_error,
+)
 from prowlarr_mcp.models import (
     ApiIndexer,
     ApiIndexerCategory,
@@ -16,22 +22,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from prowlarr_mcp.config import Settings
-
-
-class ProwlarrError(Exception):
-    """Base error for failures while communicating with Prowlarr."""
-
-
-class ProwlarrAuthenticationError(ProwlarrError):
-    """Prowlarr rejected the configured API key."""
-
-
-class ProwlarrResponseError(ProwlarrError):
-    """Prowlarr returned an unsuccessful or invalid response."""
-
-
-class ProwlarrConnectionError(ProwlarrError):
-    """Prowlarr could not be reached within the configured timeout."""
 
 
 _RELEASE_LIST = TypeAdapter(list[ApiRelease])
@@ -134,7 +124,9 @@ class ProwlarrClient:
                 "Prowlarr rejected the configured API key"
             )
         if response.is_error:
-            raise ProwlarrResponseError(
-                f"Prowlarr {operation} failed with HTTP {response.status_code}"
+            raise response_error(
+                response,
+                operation=operation,
+                api_key=self._client.headers.get("X-Api-Key", ""),
             )
         return response
