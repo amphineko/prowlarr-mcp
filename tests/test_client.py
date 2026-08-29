@@ -6,13 +6,13 @@ import unittest
 import httpx
 from pydantic import SecretStr
 
-from prowlarr_mcp.client import (
+from prowlarr_mcp.client import ProwlarrClient
+from prowlarr_mcp.config import Settings
+from prowlarr_mcp.errors import (
     ProwlarrAuthenticationError,
-    ProwlarrClient,
     ProwlarrConnectionError,
     ProwlarrResponseError,
 )
-from prowlarr_mcp.config import Settings
 from prowlarr_mcp.models import DownloadProtocol, SearchType
 
 
@@ -211,7 +211,10 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_server_error_is_reported_without_response_body(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
-            return httpx.Response(500, text="sensitive upstream diagnostics")
+            return httpx.Response(
+                500,
+                json={"message": "sensitive upstream diagnostics"},
+            )
 
         client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
         self.addAsyncCleanup(client.close)
@@ -229,6 +232,111 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             str(raised.exception),
             "Prowlarr search failed with HTTP 500",
+        )
+        self.assertEqual(raised.exception.status_code, 500)
+        self.assertIsNone(raised.exception.detail)
+
+    async def test_client_error_includes_error_model_message(self) -> None:
+        async def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                404,
+                json={
+                    "message": "Release cache entry has expired",
+                    "description": "stack trace containing secret-key",
+                    "content": {"diagnostics": "unsafe content"},
+                },
+            )
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        with self.assertRaises(ProwlarrResponseError) as raised:
+            await client.search_releases(
+                query="",
+                search_type=SearchType.SEARCH,
+                indexer_ids=[],
+                categories=[],
+                limit=20,
+                offset=0,
+            )
+
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertEqual(
+            raised.exception.detail,
+            "Release cache entry has expired",
+        )
+        self.assertEqual(
+            str(raised.exception),
+            "Prowlarr search failed with HTTP 404: Release cache entry has expired",
+        )
+        self.assertNotIn("stack trace", str(raised.exception))
+        self.assertNotIn("unsafe content", str(raised.exception))
+
+    async def test_problem_details_are_reported(self) -> None:
+        async def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                400,
+                json={
+                    "title": "One or more validation errors occurred.",
+                    "status": 400,
+                    "traceId": "ignored-trace-id",
+                    "errors": {
+                        "limit": ["Limit is invalid"],
+                        "offset": ["Offset is invalid"],
+                    },
+                },
+            )
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        with self.assertRaises(ProwlarrResponseError) as raised:
+            await client.list_indexers()
+
+        self.assertEqual(
+            raised.exception.detail,
+            "Limit is invalid; Offset is invalid",
+        )
+        self.assertNotIn("ignored-trace-id", str(raised.exception))
+
+    async def test_fluent_validation_errors_are_reported(self) -> None:
+        async def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                400,
+                json=[
+                    {
+                        "propertyName": "categories",
+                        "errorMessage": "Categories must be provided",
+                        "severity": "error",
+                    }
+                ],
+            )
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        with self.assertRaises(ProwlarrResponseError) as raised:
+            await client.list_categories()
+
+        self.assertEqual(raised.exception.detail, "Categories must be provided")
+
+    async def test_non_json_client_error_body_is_not_reported(self) -> None:
+        async def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                400,
+                text="unsafe proxy diagnostics",
+                headers={"Content-Type": "text/html"},
+            )
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        with self.assertRaises(ProwlarrResponseError) as raised:
+            await client.list_categories()
+
+        self.assertEqual(
+            str(raised.exception),
+            "Prowlarr category discovery failed with HTTP 400",
         )
 
     async def test_request_errors_use_safe_consistent_message(self) -> None:

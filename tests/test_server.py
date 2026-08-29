@@ -118,7 +118,10 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_upstream_error_is_a_safe_tool_error(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
-            return httpx.Response(500, text="sensitive upstream diagnostics")
+            return httpx.Response(
+                500,
+                json={"message": "sensitive upstream diagnostics"},
+            )
 
         server = create_server(
             Settings(
@@ -139,4 +142,35 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
         rendered = " ".join(getattr(content, "text", "") for content in result.content)
         self.assertIn("HTTP 500", rendered)
         self.assertNotIn("sensitive upstream diagnostics", rendered)
+        self.assertNotIn("secret-key", rendered)
+
+    async def test_safe_upstream_detail_reaches_tool_error(self) -> None:
+        async def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                404,
+                json={
+                    "message": "Release cache entry has expired",
+                    "description": "stack trace containing secret-key",
+                },
+            )
+
+        server = create_server(
+            Settings(
+                url="http://prowlarr.test",
+                api_key=SecretStr("secret-key"),
+            ),
+            transport=httpx.MockTransport(handler),
+        )
+
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "search_releases",
+                {},
+                raise_on_error=False,
+            )
+
+        self.assertTrue(result.is_error)
+        rendered = " ".join(getattr(content, "text", "") for content in result.content)
+        self.assertIn("HTTP 404: Release cache entry has expired", rendered)
+        self.assertNotIn("stack trace", rendered)
         self.assertNotIn("secret-key", rendered)

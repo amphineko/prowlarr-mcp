@@ -8,8 +8,9 @@ from fastmcp.server.lifespan import lifespan
 from pydantic import Field
 
 from prowlarr_mcp import __version__
-from prowlarr_mcp.client import ProwlarrClient, ProwlarrError
+from prowlarr_mcp.client import ProwlarrClient
 from prowlarr_mcp.config import Settings
+from prowlarr_mcp.errors import ProwlarrError
 from prowlarr_mcp.models import (
     CategoryResults,
     IndexerResults,
