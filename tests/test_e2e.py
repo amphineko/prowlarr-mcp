@@ -13,6 +13,7 @@ from prowlarr_mcp.models import (
     CategoryResults,
     DownloadClientResults,
     IndexerResults,
+    ReleaseSubmissionResult,
     SearchResults,
     SearchType,
 )
@@ -152,6 +153,89 @@ class SearchE2ETest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output.releases[0].size_bytes, 123456)
         self.assertEqual(output.releases[0].categories[0].id, 5070)
         self.assertEqual(output.releases[0].categories[0].name, "TV/Anime")
+
+    async def test_submission_round_trip_posts_release_identity(self) -> None:
+        async def prowlarr_handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/base/api/v1/search")
+            self.assertEqual(request.headers["X-Api-Key"], "secret-key")
+            self.assertEqual(
+                json.loads(request.content),
+                {
+                    "indexerId": 7,
+                    "guid": "release-guid",
+                    "downloadClientId": 3,
+                },
+            )
+            return httpx.Response(
+                200,
+                json={
+                    "indexerId": 7,
+                    "guid": "release-guid",
+                    "downloadClientId": 3,
+                },
+            )
+
+        server = create_server(
+            Settings(
+                url="http://prowlarr.test/base",
+                api_key=SecretStr("secret-key"),
+            ),
+            transport=httpx.MockTransport(prowlarr_handler),
+        )
+
+        async with Client(FastMCPTransport(server)) as client:
+            result = await client.call_tool(
+                "grab_release",
+                {
+                    "indexer_id": 7,
+                    "guid": "release-guid",
+                    "download_client_id": 3,
+                },
+            )
+
+        self.assertFalse(result.is_error)
+        structured = result.structured_content
+        self.assertIsNotNone(structured)
+        if structured is None:
+            self.fail("grab_release must return structured content")
+        submitted = ReleaseSubmissionResult.model_validate(structured)
+        self.assertEqual(submitted.indexer_id, 7)
+        self.assertEqual(submitted.guid, "release-guid")
+        self.assertEqual(submitted.download_client_id, 3)
+
+    async def test_submission_reports_expired_search_cache(self) -> None:
+        async def prowlarr_handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                404,
+                json={
+                    "message": (
+                        "Couldn't find requested release in cache, try searching again"
+                    ),
+                    "description": "ignored stack trace",
+                },
+            )
+
+        server = create_server(
+            Settings(
+                url="http://prowlarr.test/base",
+                api_key=SecretStr("secret-key"),
+            ),
+            transport=httpx.MockTransport(prowlarr_handler),
+        )
+
+        async with Client(FastMCPTransport(server)) as client:
+            result = await client.call_tool(
+                "grab_release",
+                {"indexer_id": 7, "guid": "expired-release"},
+                raise_on_error=False,
+            )
+
+        self.assertTrue(result.is_error)
+        rendered = " ".join(getattr(content, "text", "") for content in result.content)
+        self.assertIn("HTTP 404", rendered)
+        self.assertIn("try searching again", rendered)
+        self.assertNotIn("stack trace", rendered)
 
     async def test_discovery_round_trip_omits_provider_configuration(self) -> None:
         async def prowlarr_handler(request: httpx.Request) -> httpx.Response:

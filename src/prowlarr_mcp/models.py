@@ -85,6 +85,12 @@ class ApiDownloadClient(ApiModel):
     supports_categories: bool = False
 
 
+class ApiReleaseSubmission(ApiModel):
+    indexer_id: int
+    guid: str
+    download_client_id: int | None = None
+
+
 class ApiRelease(ApiModel):
     guid: str
     indexer_id: int
@@ -148,6 +154,12 @@ class DownloadClientSummary(BaseModel):
 class DownloadClientResults(BaseModel):
     total: int
     download_clients: list[DownloadClientSummary]
+
+
+class ReleaseSubmissionResult(BaseModel):
+    indexer_id: int
+    guid: str
+    download_client_id: int | None
 
 
 class ReleaseSummary(BaseModel):

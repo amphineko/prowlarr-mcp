@@ -7,12 +7,14 @@ from prowlarr_mcp.models import (
     ApiIndexer,
     ApiIndexerCategory,
     ApiRelease,
+    ApiReleaseSubmission,
     Category,
     CategoryResults,
     DownloadClientResults,
     DownloadClientSummary,
     IndexerResults,
     IndexerSummary,
+    ReleaseSubmissionResult,
     ReleaseSummary,
     SearchCategory,
     SearchResults,
@@ -42,6 +44,16 @@ class DiscoveryClient(Protocol):
     async def list_categories(self) -> list[ApiIndexerCategory]: ...
 
     async def list_download_clients(self) -> list[ApiDownloadClient]: ...
+
+
+class ReleaseSubmissionClient(Protocol):
+    async def grab_release(
+        self,
+        *,
+        indexer_id: int,
+        guid: str,
+        download_client_id: int | None,
+    ) -> ApiReleaseSubmission: ...
 
 
 class SearchService:
@@ -106,6 +118,36 @@ class SearchService:
             ],
             info_hash=release.info_hash,
             info_url=release.info_url,
+        )
+
+
+class ReleaseSubmissionService:
+    def __init__(self, client: ReleaseSubmissionClient) -> None:
+        self._client = client
+
+    async def grab_release(
+        self,
+        *,
+        indexer_id: int,
+        guid: str,
+        download_client_id: int | None = None,
+    ) -> ReleaseSubmissionResult:
+        if indexer_id <= 0:
+            raise ValueError("indexer_id must be a positive integer")
+        if not guid.strip():
+            raise ValueError("guid must not be empty")
+        if download_client_id is not None and download_client_id <= 0:
+            raise ValueError("download_client_id must be a positive integer")
+
+        submitted = await self._client.grab_release(
+            indexer_id=indexer_id,
+            guid=guid,
+            download_client_id=download_client_id,
+        )
+        return ReleaseSubmissionResult(
+            indexer_id=submitted.indexer_id,
+            guid=submitted.guid,
+            download_client_id=submitted.download_client_id,
         )
 
 

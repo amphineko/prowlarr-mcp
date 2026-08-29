@@ -15,10 +15,15 @@ from prowlarr_mcp.models import (
     CategoryResults,
     DownloadClientResults,
     IndexerResults,
+    ReleaseSubmissionResult,
     SearchResults,
     SearchType,
 )
-from prowlarr_mcp.service import DiscoveryService, SearchService
+from prowlarr_mcp.service import (
+    DiscoveryService,
+    ReleaseSubmissionService,
+    SearchService,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -34,6 +39,7 @@ def create_server(
     client = ProwlarrClient(settings, transport=transport)
     search_service = SearchService(client, max_results=settings.max_results)
     discovery_service = DiscoveryService(client)
+    submission_service = ReleaseSubmissionService(client)
 
     @lifespan
     async def server_lifespan(_: FastMCP[None]) -> AsyncGenerator[None]:
@@ -46,8 +52,8 @@ def create_server(
         "prowlarr-mcp",
         version=__version__,
         instructions=(
-            "Search releases and inspect search and download capabilities through "
-            "Prowlarr."
+            "Search releases, inspect search and download capabilities, and submit "
+            "selected releases through Prowlarr."
         ),
         lifespan=server_lifespan,
     )
@@ -144,6 +150,34 @@ def create_server(
                 enabled_only=enabled_only
             )
         except ProwlarrError as exc:
+            raise ToolError(str(exc)) from exc
+
+    @mcp.tool(
+        annotations={
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        }
+    )
+    async def grab_release(
+        indexer_id: Annotated[int, Field(gt=0)],
+        guid: Annotated[str, Field(min_length=1)],
+        download_client_id: Annotated[int, Field(gt=0)] | None = None,
+    ) -> ReleaseSubmissionResult:
+        """Submit a recently searched release to a configured download client.
+
+        The indexer_id and guid must come from search_releases. Prowlarr caches
+        search results for about 30 minutes; search again if the release expired.
+        Omit download_client_id to let Prowlarr select its configured default.
+        """
+        try:
+            return await submission_service.grab_release(
+                indexer_id=indexer_id,
+                guid=guid,
+                download_client_id=download_client_id,
+            )
+        except (ProwlarrError, ValueError) as exc:
             raise ToolError(str(exc)) from exc
 
     return mcp

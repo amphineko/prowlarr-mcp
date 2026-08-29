@@ -16,6 +16,7 @@ from prowlarr_mcp.models import (
     ApiIndexer,
     ApiIndexerCategory,
     ApiRelease,
+    ApiReleaseSubmission,
     SearchType,
 )
 
@@ -119,6 +120,35 @@ class ProwlarrClient:
                 "Prowlarr returned an invalid download client response"
             ) from exc
 
+    async def grab_release(
+        self,
+        *,
+        indexer_id: int,
+        guid: str,
+        download_client_id: int | None,
+    ) -> ApiReleaseSubmission:
+        submission = ApiReleaseSubmission(
+            indexer_id=indexer_id,
+            guid=guid,
+            download_client_id=download_client_id,
+        )
+        response = await self._request(
+            "POST",
+            "api/v1/search",
+            operation="release submission",
+            json=submission.model_dump(
+                mode="json",
+                by_alias=True,
+                exclude_none=True,
+            ),
+        )
+        try:
+            return ApiReleaseSubmission.model_validate_json(response.content)
+        except ValidationError as exc:
+            raise ProwlarrResponseError(
+                "Prowlarr returned an invalid release submission response"
+            ) from exc
+
     async def _get(
         self,
         path: str,
@@ -126,8 +156,29 @@ class ProwlarrClient:
         operation: str,
         params: list[tuple[str, str | int | float | bool | None]] | None = None,
     ) -> httpx.Response:
+        return await self._request(
+            "GET",
+            path,
+            operation=operation,
+            params=params,
+        )
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        operation: str,
+        params: list[tuple[str, str | int | float | bool | None]] | None = None,
+        json: object | None = None,
+    ) -> httpx.Response:
         try:
-            response = await self._client.get(path, params=params)
+            response = await self._client.request(
+                method,
+                path,
+                params=params,
+                json=json,
+            )
         except httpx.RequestError as exc:
             raise ProwlarrConnectionError(
                 "Could not complete the request to Prowlarr"

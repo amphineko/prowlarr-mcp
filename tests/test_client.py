@@ -187,6 +187,66 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(download_clients[0].categories[0].categories, [5000, 5070])
         self.assertFalse(hasattr(download_clients[0], "fields"))
 
+    async def test_submits_release_to_selected_download_client(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(
+                request.url,
+                httpx.URL("http://prowlarr.test/base/api/v1/search"),
+            )
+            self.assertEqual(request.headers["X-Api-Key"], "secret-key")
+            self.assertEqual(
+                json.loads(request.content),
+                {
+                    "indexerId": 7,
+                    "guid": "release-guid",
+                    "downloadClientId": 3,
+                },
+            )
+            return httpx.Response(
+                200,
+                json={
+                    "indexerId": 7,
+                    "guid": "release-guid",
+                    "downloadClientId": 3,
+                },
+            )
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        submitted = await client.grab_release(
+            indexer_id=7,
+            guid="release-guid",
+            download_client_id=3,
+        )
+
+        self.assertEqual(submitted.indexer_id, 7)
+        self.assertEqual(submitted.guid, "release-guid")
+        self.assertEqual(submitted.download_client_id, 3)
+
+    async def test_submission_omits_default_download_client(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(
+                json.loads(request.content),
+                {"indexerId": 7, "guid": "release-guid"},
+            )
+            return httpx.Response(
+                200,
+                json={"indexerId": 7, "guid": "release-guid"},
+            )
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        submitted = await client.grab_release(
+            indexer_id=7,
+            guid="release-guid",
+            download_client_id=None,
+        )
+
+        self.assertIsNone(submitted.download_client_id)
+
     async def test_invalid_indexer_response_is_reported(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
             malformed = indexer_payload()
@@ -218,6 +278,22 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(ProwlarrResponseError, "invalid download client"):
             await client.list_download_clients()
+
+    async def test_invalid_submission_response_is_reported(self) -> None:
+        async def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"guid": "missing-indexer-id"})
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        with self.assertRaisesRegex(
+            ProwlarrResponseError, "invalid release submission"
+        ):
+            await client.grab_release(
+                indexer_id=7,
+                guid="release-guid",
+                download_client_id=None,
+            )
 
     async def test_authentication_error_does_not_include_api_key(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
