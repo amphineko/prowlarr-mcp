@@ -5,7 +5,12 @@ from typing import TYPE_CHECKING
 import httpx
 from pydantic import TypeAdapter, ValidationError
 
-from prowlarr_mcp.models import ApiRelease, SearchType
+from prowlarr_mcp.models import (
+    ApiIndexer,
+    ApiIndexerCategory,
+    ApiRelease,
+    SearchType,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -30,6 +35,8 @@ class ProwlarrConnectionError(ProwlarrError):
 
 
 _RELEASE_LIST = TypeAdapter(list[ApiRelease])
+_INDEXER_LIST = TypeAdapter(list[ApiIndexer])
+_CATEGORY_LIST = TypeAdapter(list[ApiIndexerCategory])
 
 
 class ProwlarrClient:
@@ -71,8 +78,52 @@ class ProwlarrClient:
         params.extend(("indexerIds", indexer_id) for indexer_id in indexer_ids)
         params.extend(("categories", category) for category in categories)
 
+        response = await self._get(
+            "api/v1/search",
+            operation="search",
+            params=params,
+        )
+
         try:
-            response = await self._client.get("api/v1/search", params=params)
+            return _RELEASE_LIST.validate_json(response.content)
+        except ValidationError as exc:
+            raise ProwlarrResponseError(
+                "Prowlarr returned an invalid search response"
+            ) from exc
+
+    async def list_indexers(self) -> list[ApiIndexer]:
+        response = await self._get(
+            "api/v1/indexer",
+            operation="indexer discovery",
+        )
+        try:
+            return _INDEXER_LIST.validate_json(response.content)
+        except ValidationError as exc:
+            raise ProwlarrResponseError(
+                "Prowlarr returned an invalid indexer response"
+            ) from exc
+
+    async def list_categories(self) -> list[ApiIndexerCategory]:
+        response = await self._get(
+            "api/v1/indexer/categories",
+            operation="category discovery",
+        )
+        try:
+            return _CATEGORY_LIST.validate_json(response.content)
+        except ValidationError as exc:
+            raise ProwlarrResponseError(
+                "Prowlarr returned an invalid category response"
+            ) from exc
+
+    async def _get(
+        self,
+        path: str,
+        *,
+        operation: str,
+        params: list[tuple[str, str | int | float | bool | None]] | None = None,
+    ) -> httpx.Response:
+        try:
+            response = await self._client.get(path, params=params)
         except httpx.RequestError as exc:
             raise ProwlarrConnectionError(
                 "Could not complete the request to Prowlarr"
@@ -84,12 +135,6 @@ class ProwlarrClient:
             )
         if response.is_error:
             raise ProwlarrResponseError(
-                f"Prowlarr search failed with HTTP {response.status_code}"
+                f"Prowlarr {operation} failed with HTTP {response.status_code}"
             )
-
-        try:
-            return _RELEASE_LIST.validate_json(response.content)
-        except ValidationError as exc:
-            raise ProwlarrResponseError(
-                "Prowlarr returned an invalid search response"
-            ) from exc
+        return response
