@@ -12,6 +12,7 @@ class ResponseErrorTest(unittest.TestCase):
         return response_error(
             response,
             operation="search",
+            api_key="secret-key",
         )
 
     def test_reports_error_model_message(self) -> None:

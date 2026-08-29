@@ -69,6 +69,14 @@ also enforces it on the combined response. `truncated` means that the MCP server
 discarded part of the response it received; it is not a `has_more` pagination
 indicator and cannot prove whether Prowlarr has additional results.
 
+## Error handling
+
+For Prowlarr 4xx responses, the server reports bounded, sanitized details from
+recognized JSON error formats. It ignores stack traces, diagnostic content,
+trace IDs, URLs, filesystem paths, API keys, and unknown response shapes.
+Authentication errors, non-JSON bodies, and 5xx responses use generic messages
+with an HTTP status code.
+
 ## Roadmap
 
 - [x] **v0.1:** Search releases through configured Prowlarr indexers.

@@ -127,5 +127,6 @@ class ProwlarrClient:
             raise response_error(
                 response,
                 operation=operation,
+                api_key=self._client.headers.get("X-Api-Key", ""),
             )
         return response

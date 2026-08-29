@@ -236,12 +236,15 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.status_code, 500)
         self.assertIsNone(raised.exception.detail)
 
-    async def test_client_error_includes_error_model_message(self) -> None:
+    async def test_client_error_includes_only_safe_error_model_message(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 404,
                 json={
-                    "message": "Release cache entry has expired",
+                    "message": (
+                        "Release at https://internal.example/release for secret-key "
+                        "has expired"
+                    ),
                     "description": "stack trace containing secret-key",
                     "content": {"diagnostics": "unsafe content"},
                 },
@@ -263,26 +266,31 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.status_code, 404)
         self.assertEqual(
             raised.exception.detail,
-            "Release cache entry has expired",
+            "Release at [URL] for [redacted] has expired",
         )
         self.assertEqual(
             str(raised.exception),
-            "Prowlarr search failed with HTTP 404: Release cache entry has expired",
+            "Prowlarr search failed with HTTP 404: "
+            "Release at [URL] for [redacted] has expired",
         )
         self.assertNotIn("stack trace", str(raised.exception))
+        self.assertNotIn("internal.example", str(raised.exception))
         self.assertNotIn("unsafe content", str(raised.exception))
 
-    async def test_problem_details_are_reported(self) -> None:
+    async def test_problem_details_are_sanitized_and_bounded(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 400,
                 json={
                     "title": "One or more validation errors occurred.",
                     "status": 400,
-                    "traceId": "ignored-trace-id",
+                    "traceId": "unsafe-trace-id",
                     "errors": {
-                        "limit": ["Limit is invalid"],
-                        "offset": ["Offset is invalid"],
+                        "limit": [
+                            "Invalid secret-key at https://internal.example/value\u001b",
+                            "Invalid path /home/example/private/file",
+                        ],
+                        "offset": ["x" * 400],
                     },
                 },
             )
@@ -293,11 +301,15 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ProwlarrResponseError) as raised:
             await client.list_indexers()
 
-        self.assertEqual(
-            raised.exception.detail,
-            "Limit is invalid; Offset is invalid",
-        )
-        self.assertNotIn("ignored-trace-id", str(raised.exception))
+        rendered = str(raised.exception)
+        self.assertLessEqual(len(raised.exception.detail or ""), 300)
+        self.assertIn("[redacted]", rendered)
+        self.assertIn("[URL]", rendered)
+        self.assertIn("[path]", rendered)
+        self.assertNotIn("secret-key", rendered)
+        self.assertNotIn("internal.example", rendered)
+        self.assertNotIn("unsafe-trace-id", rendered)
+        self.assertNotIn("\u001b", rendered)
 
     async def test_fluent_validation_errors_are_reported(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:

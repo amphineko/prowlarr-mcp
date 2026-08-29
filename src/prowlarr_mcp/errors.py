@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from pydantic import Field, TypeAdapter, ValidationError
@@ -55,6 +56,10 @@ _ERROR_MODEL = TypeAdapter(_ErrorModel)
 _PROBLEM_DETAILS = TypeAdapter(_ProblemDetails)
 _VALIDATION_FAILURES = TypeAdapter(list[_ValidationFailure])
 _MAX_ERROR_DETAILS = 3
+_ERROR_DETAIL_LIMIT = 300
+_URL_PATTERN = re.compile(r"\b(?:https?|ftp)://\S+", re.IGNORECASE)
+_WINDOWS_PATH_PATTERN = re.compile(r"\b[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]*")
+_UNIX_PATH_PATTERN = re.compile(r"(?<![\w:])/(?:[^/\s]+/)+[^/\s]*")
 
 
 def _parse_error_details(response: httpx.Response) -> list[str]:
@@ -106,14 +111,31 @@ def _parse_error_details(response: httpx.Response) -> list[str]:
     return details
 
 
+def _safe_error_detail(response: httpx.Response, *, api_key: str) -> str | None:
+    detail = "; ".join(_parse_error_details(response))
+    if not detail:
+        return None
+    detail = " ".join(detail.split())
+    detail = "".join(character for character in detail if character.isprintable())
+    if api_key:
+        detail = detail.replace(api_key, "[redacted]")
+    detail = _URL_PATTERN.sub("[URL]", detail)
+    detail = _WINDOWS_PATH_PATTERN.sub("[path]", detail)
+    detail = _UNIX_PATH_PATTERN.sub("[path]", detail)
+    if len(detail) > _ERROR_DETAIL_LIMIT:
+        return f"{detail[: _ERROR_DETAIL_LIMIT - 3].rstrip()}..."
+    return detail or None
+
+
 def response_error(
     response: httpx.Response,
     *,
     operation: str,
+    api_key: str,
 ) -> ProwlarrResponseError:
     """Convert an unsuccessful HTTP response into a Prowlarr domain error."""
     return ProwlarrResponseError(
         f"Prowlarr {operation} failed with HTTP {response.status_code}",
         status_code=response.status_code,
-        detail="; ".join(_parse_error_details(response)) or None,
+        detail=_safe_error_detail(response, api_key=api_key),
     )
