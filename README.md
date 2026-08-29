@@ -53,6 +53,11 @@ without provider configuration fields or credentials.
 Use these category IDs with `search_releases`. Category ID `0` is valid in
 Prowlarr's taxonomy and is accepted by the search tool.
 
+`list_download_clients` lists configured download clients and omits disabled
+clients by default. It returns only submission-relevant fields and numeric
+category IDs; provider configuration, client category names, hosts, and
+credentials are excluded.
+
 `search_releases` accepts:
 
 - `query`: text query; an empty string requests recent releases.
@@ -81,6 +86,7 @@ with an HTTP status code.
 
 - [x] **v0.1:** Search releases through configured Prowlarr indexers.
 - [x] Discover available indexers and search categories.
+- [x] Discover available download clients.
 - [ ] Submit a selected release to a configured download client.
 - [ ] Inspect Prowlarr health, indexer status, and search history.
 

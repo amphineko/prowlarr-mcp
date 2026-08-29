@@ -45,7 +45,12 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             tools_by_name = {tool.name: tool for tool in tools}
             self.assertEqual(
                 set(tools_by_name),
-                {"search_releases", "list_indexers", "list_categories"},
+                {
+                    "search_releases",
+                    "list_indexers",
+                    "list_categories",
+                    "list_download_clients",
+                },
             )
             schema = tools_by_name["search_releases"].inputSchema["properties"]
             self.assertEqual(schema["limit"]["minimum"], 1)
@@ -61,6 +66,11 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(
                 tools_by_name["list_indexers"].inputSchema["properties"][
+                    "enabled_only"
+                ]["default"]
+            )
+            self.assertTrue(
+                tools_by_name["list_download_clients"].inputSchema["properties"][
                     "enabled_only"
                 ]["default"]
             )
@@ -92,6 +102,13 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 categories.structured_content,
                 {"total": 0, "categories": []},
+            )
+
+            download_clients = await client.call_tool("list_download_clients", {})
+            self.assertFalse(download_clients.is_error)
+            self.assertEqual(
+                download_clients.structured_content,
+                {"total": 0, "download_clients": []},
             )
 
             invalid = await client.call_tool(

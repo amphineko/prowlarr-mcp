@@ -6,6 +6,8 @@ from typing import override
 
 from prowlarr_mcp.models import (
     ApiCategory,
+    ApiDownloadClient,
+    ApiDownloadClientCategory,
     ApiIndexer,
     ApiIndexerCapabilities,
     ApiIndexerCategory,
@@ -31,15 +33,20 @@ class StubDiscoveryClient:
         *,
         indexers: list[ApiIndexer],
         categories: list[ApiIndexerCategory],
+        download_clients: list[ApiDownloadClient],
     ) -> None:
         self.indexers = indexers
         self.categories = categories
+        self.download_clients = download_clients
 
     async def list_indexers(self) -> list[ApiIndexer]:
         return self.indexers
 
     async def list_categories(self) -> list[ApiIndexerCategory]:
         return self.categories
+
+    async def list_download_clients(self) -> list[ApiDownloadClient]:
+        return self.download_clients
 
 
 class SearchServiceTest(unittest.IsolatedAsyncioTestCase):
@@ -148,10 +155,30 @@ class DiscoveryServiceTest(unittest.IsolatedAsyncioTestCase):
         self.disabled_indexer = self.enabled_indexer.model_copy(
             update={"id": 8, "name": "Disabled", "enable": False}
         )
+        self.enabled_download_client = ApiDownloadClient(
+            id=3,
+            name="Example Download Client",
+            enable=True,
+            protocol=DownloadProtocol.TORRENT,
+            priority=1,
+            supports_categories=True,
+            categories=[
+                ApiDownloadClientCategory(categories=[5000, 5070]),
+                ApiDownloadClientCategory(categories=[5070]),
+                ApiDownloadClientCategory(),
+            ],
+        )
+        self.disabled_download_client = self.enabled_download_client.model_copy(
+            update={"id": 4, "name": "Disabled", "enable": False}
+        )
         self.service = DiscoveryService(
             StubDiscoveryClient(
                 indexers=[self.enabled_indexer, self.disabled_indexer],
                 categories=[category],
+                download_clients=[
+                    self.enabled_download_client,
+                    self.disabled_download_client,
+                ],
             )
         )
 
@@ -178,3 +205,17 @@ class DiscoveryServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.total, 2)
         self.assertEqual(result.categories[0].id, 5000)
         self.assertEqual(result.categories[0].subcategories[0].id, 5070)
+
+    async def test_maps_enabled_download_clients(self) -> None:
+        result = await self.service.list_download_clients()
+
+        self.assertEqual(result.total, 1)
+        self.assertEqual(result.download_clients[0].id, 3)
+        self.assertTrue(result.download_clients[0].supports_categories)
+        self.assertEqual(result.download_clients[0].category_ids, [5000, 5070])
+
+    async def test_can_include_disabled_download_clients(self) -> None:
+        result = await self.service.list_download_clients(enabled_only=False)
+
+        self.assertEqual(result.total, 2)
+        self.assertFalse(result.download_clients[1].enabled)
