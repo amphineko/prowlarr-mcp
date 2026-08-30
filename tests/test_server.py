@@ -28,7 +28,7 @@ class TrackingTransport(httpx.AsyncBaseTransport):
 
 
 class McpServerTest(unittest.IsolatedAsyncioTestCase):
-    async def test_server_exposes_only_read_only_tools(self) -> None:
+    async def test_server_exposes_tools_with_explicit_behavior(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json=[])
 
@@ -50,6 +50,7 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
                     "list_indexers",
                     "list_categories",
                     "list_download_clients",
+                    "grab_release",
                 },
             )
             schema = tools_by_name["search_releases"].inputSchema["properties"]
@@ -74,14 +75,25 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
                     "enabled_only"
                 ]["default"]
             )
+            grab_schema = tools_by_name["grab_release"].inputSchema["properties"]
+            self.assertEqual(grab_schema["indexer_id"]["exclusiveMinimum"], 0)
+            self.assertEqual(grab_schema["guid"]["minLength"], 1)
+            self.assertEqual(
+                grab_schema["download_client_id"]["anyOf"][0]["exclusiveMinimum"],
+                0,
+            )
             for tool in tools:
                 annotations = tool.annotations
                 self.assertIsNotNone(annotations)
                 if annotations is None:
                     self.fail(f"{tool.name} must declare tool annotations")
-                self.assertTrue(annotations.readOnlyHint)
                 self.assertFalse(annotations.destructiveHint)
-                self.assertTrue(annotations.idempotentHint)
+                if tool.name == "grab_release":
+                    self.assertFalse(annotations.readOnlyHint)
+                    self.assertFalse(annotations.idempotentHint)
+                else:
+                    self.assertTrue(annotations.readOnlyHint)
+                    self.assertTrue(annotations.idempotentHint)
 
             result = await client.call_tool("search_releases", {"query": "anime"})
             self.assertFalse(result.is_error)
@@ -117,6 +129,13 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
                 raise_on_error=False,
             )
             self.assertTrue(invalid.is_error)
+
+            invalid_grab = await client.call_tool(
+                "grab_release",
+                {"indexer_id": 0, "guid": ""},
+                raise_on_error=False,
+            )
+            self.assertTrue(invalid_grab.is_error)
 
     async def test_lifespan_closes_http_transport(self) -> None:
         transport = TrackingTransport()

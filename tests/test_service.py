@@ -12,11 +12,16 @@ from prowlarr_mcp.models import (
     ApiIndexerCapabilities,
     ApiIndexerCategory,
     ApiRelease,
+    ApiReleaseSubmission,
     DownloadProtocol,
     IndexerPrivacy,
     SearchType,
 )
-from prowlarr_mcp.service import DiscoveryService, SearchService
+from prowlarr_mcp.service import (
+    DiscoveryService,
+    ReleaseSubmissionService,
+    SearchService,
+)
 
 
 class StubClient:
@@ -47,6 +52,26 @@ class StubDiscoveryClient:
 
     async def list_download_clients(self) -> list[ApiDownloadClient]:
         return self.download_clients
+
+
+class StubSubmissionClient:
+    def __init__(self) -> None:
+        self.submissions: list[ApiReleaseSubmission] = []
+
+    async def grab_release(
+        self,
+        *,
+        indexer_id: int,
+        guid: str,
+        download_client_id: int | None,
+    ) -> ApiReleaseSubmission:
+        submission = ApiReleaseSubmission(
+            indexer_id=indexer_id,
+            guid=guid,
+            download_client_id=download_client_id,
+        )
+        self.submissions.append(submission)
+        return submission
 
 
 class SearchServiceTest(unittest.IsolatedAsyncioTestCase):
@@ -127,6 +152,37 @@ class SearchServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(ValueError, "non-negative"):
             await service.search_releases(offset=-1)
+
+
+class ReleaseSubmissionServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_submits_and_maps_release_identity(self) -> None:
+        client = StubSubmissionClient()
+        service = ReleaseSubmissionService(client)
+
+        result = await service.grab_release(
+            indexer_id=7,
+            guid="release-guid",
+            download_client_id=3,
+        )
+
+        self.assertEqual(len(client.submissions), 1)
+        self.assertEqual(result.indexer_id, 7)
+        self.assertEqual(result.guid, "release-guid")
+        self.assertEqual(result.download_client_id, 3)
+
+    async def test_rejects_invalid_release_identity(self) -> None:
+        service = ReleaseSubmissionService(StubSubmissionClient())
+
+        with self.assertRaisesRegex(ValueError, "indexer_id"):
+            await service.grab_release(indexer_id=0, guid="release-guid")
+        with self.assertRaisesRegex(ValueError, "guid"):
+            await service.grab_release(indexer_id=7, guid="  ")
+        with self.assertRaisesRegex(ValueError, "download_client_id"):
+            await service.grab_release(
+                indexer_id=7,
+                guid="release-guid",
+                download_client_id=0,
+            )
 
 
 class DiscoveryServiceTest(unittest.IsolatedAsyncioTestCase):

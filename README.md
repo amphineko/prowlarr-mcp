@@ -58,6 +58,13 @@ clients by default. It returns only submission-relevant fields and numeric
 category IDs; provider configuration, client category names, hosts, and
 credentials are excluded.
 
+`grab_release` submits a release returned by `search_releases` to a configured
+download client. Pass the release's `indexer_id` and `guid`, plus an optional
+`download_client_id` from `list_download_clients`. Omitting the client ID lets
+Prowlarr select its configured default. Search results are cached by Prowlarr
+for about 30 minutes; search again if submission reports that the release has
+expired from the cache.
+
 `search_releases` accepts:
 
 - `query`: text query; an empty string requests recent releases.
@@ -87,7 +94,7 @@ with an HTTP status code.
 - [x] **v0.1:** Search releases through configured Prowlarr indexers.
 - [x] Discover available indexers and search categories.
 - [x] Discover available download clients.
-- [ ] Submit a selected release to a configured download client.
+- [x] Submit a selected release to a configured download client.
 - [ ] Inspect Prowlarr health, indexer status, and search history.
 
 ## Testing with the MCP client
