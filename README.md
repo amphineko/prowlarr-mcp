@@ -92,9 +92,8 @@ with an HTTP status code.
 ## Roadmap
 
 - [x] **v0.1:** Search releases through configured Prowlarr indexers.
-- [x] Discover available indexers and search categories.
-- [x] Discover available download clients.
-- [x] Submit a selected release to a configured download client.
+- [x] **v0.2:** Discover search and download capabilities, and submit a
+  selected release to a configured download client.
 - [ ] Inspect Prowlarr health, indexer status, and search history.
 
 ## Testing with the MCP client
