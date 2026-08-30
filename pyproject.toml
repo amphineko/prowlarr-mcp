@@ -23,6 +23,7 @@ build-backend = "hatchling.build"
 dev = [
     "pyrefly>=1.1.1",
     "ruff>=0.16.0",
+    "testcontainers>=4.15.0",
 ]
 
 [tool.hatch.build.targets.wheel]
