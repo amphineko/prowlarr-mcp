@@ -28,6 +28,17 @@ Configuration:
 uv run prowlarr-mcp
 ```
 
+The container image also runs the MCP server over stdio:
+
+```sh
+docker run --rm -i \
+  -e PROWLARR_URL=http://prowlarr.example:9696 \
+  -e PROWLARR_API_KEY \
+  ghcr.io/amphineko/prowlarr-mcp:latest
+```
+
+Keep stdin attached with `-i`; the server does not expose a network port.
+
 Example Codex/OpenCode-style stdio configuration:
 
 ```json
