@@ -88,6 +88,26 @@ def download_client_payload() -> dict[str, object]:
     }
 
 
+def health_payload() -> dict[str, object]:
+    return {
+        "id": 1,
+        "source": "IndexerStatusCheck",
+        "type": "warning",
+        "message": "Some indexers are unavailable",
+        "wikiUrl": "https://wiki.servarr.com/prowlarr/system",
+    }
+
+
+def indexer_status_payload() -> dict[str, object]:
+    return {
+        "id": 9,
+        "indexerId": 7,
+        "disabledTill": "2026-08-30T17:00:00Z",
+        "mostRecentFailure": "2026-08-30T16:00:00Z",
+        "initialFailure": "2026-08-29T12:00:00Z",
+    }
+
+
 def failing_transport(
     error_type: type[httpx.RequestError],
 ) -> httpx.MockTransport:
@@ -247,6 +267,40 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(submitted.download_client_id)
 
+    async def test_gets_health_checks(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(
+                request.url,
+                httpx.URL("http://prowlarr.test/base/api/v1/health"),
+            )
+            return httpx.Response(200, json=[health_payload()])
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        checks = await client.get_health()
+
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0].source, "IndexerStatusCheck")
+        self.assertEqual(checks[0].type, "warning")
+
+    async def test_gets_blocked_indexer_status(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(
+                request.url,
+                httpx.URL("http://prowlarr.test/base/api/v1/indexerstatus"),
+            )
+            return httpx.Response(200, json=[indexer_status_payload()])
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        statuses = await client.get_indexer_status()
+
+        self.assertEqual(len(statuses), 1)
+        self.assertEqual(statuses[0].indexer_id, 7)
+        self.assertIsNotNone(statuses[0].disabled_till)
+
     async def test_invalid_indexer_response_is_reported(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:
             malformed = indexer_payload()
@@ -294,6 +348,20 @@ class ProwlarrClientTest(unittest.IsolatedAsyncioTestCase):
                 guid="release-guid",
                 download_client_id=None,
             )
+
+    async def test_invalid_diagnostic_responses_are_reported(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/health"):
+                return httpx.Response(200, json=[{"type": "unknown-severity"}])
+            return httpx.Response(200, json=[{"disabledTill": None}])
+
+        client = ProwlarrClient(settings(), transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+
+        with self.assertRaisesRegex(ProwlarrResponseError, "invalid health"):
+            await client.get_health()
+        with self.assertRaisesRegex(ProwlarrResponseError, "invalid indexer status"):
+            await client.get_indexer_status()
 
     async def test_authentication_error_does_not_include_api_key(self) -> None:
         async def handler(_: httpx.Request) -> httpx.Response:

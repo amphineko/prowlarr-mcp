@@ -12,7 +12,10 @@ from prowlarr_mcp.config import Settings
 from prowlarr_mcp.models import (
     CategoryResults,
     DownloadClientResults,
+    HealthCheckResult,
+    HealthResults,
     IndexerResults,
+    IndexerStatusResults,
     ReleaseSubmissionResult,
     SearchResults,
     SearchType,
@@ -87,6 +90,26 @@ def download_client_payload() -> dict[str, object]:
             {"name": "host", "value": "download-client.internal"},
             {"name": "password", "value": "upstream-secret"},
         ],
+    }
+
+
+def health_payload() -> dict[str, object]:
+    return {
+        "id": 1,
+        "source": "IndexerStatusCheck",
+        "type": "warning",
+        "message": "Some indexers are unavailable",
+        "wikiUrl": "https://wiki.servarr.com/prowlarr/system",
+    }
+
+
+def indexer_status_payload() -> dict[str, object]:
+    return {
+        "id": 9,
+        "indexerId": 7,
+        "disabledTill": "2026-08-30T17:00:00Z",
+        "mostRecentFailure": "2026-08-30T16:00:00Z",
+        "initialFailure": "2026-08-29T12:00:00Z",
     }
 
 
@@ -236,6 +259,47 @@ class SearchE2ETest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("HTTP 404", rendered)
         self.assertIn("try searching again", rendered)
         self.assertNotIn("stack trace", rendered)
+
+    async def test_diagnostics_round_trip(self) -> None:
+        async def prowlarr_handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "GET")
+            self.assertEqual(request.headers["X-Api-Key"], "secret-key")
+            if request.url.path == "/base/api/v1/health":
+                return httpx.Response(200, json=[health_payload()])
+            if request.url.path == "/base/api/v1/indexerstatus":
+                return httpx.Response(200, json=[indexer_status_payload()])
+            raise AssertionError(f"unexpected Prowlarr path: {request.url.path}")
+
+        server = create_server(
+            Settings(
+                url="http://prowlarr.test/base",
+                api_key=SecretStr("secret-key"),
+            ),
+            transport=httpx.MockTransport(prowlarr_handler),
+        )
+
+        async with Client(FastMCPTransport(server)) as client:
+            health_result = await client.call_tool("get_health", {})
+            status_result = await client.call_tool("get_indexer_status", {})
+
+        self.assertFalse(health_result.is_error)
+        health_content = health_result.structured_content
+        self.assertIsNotNone(health_content)
+        if health_content is None:
+            self.fail("get_health must return structured content")
+        health = HealthResults.model_validate(health_content)
+        self.assertEqual(health.total, 1)
+        self.assertEqual(health.checks[0].severity, HealthCheckResult.WARNING)
+
+        self.assertFalse(status_result.is_error)
+        status_content = status_result.structured_content
+        self.assertIsNotNone(status_content)
+        if status_content is None:
+            self.fail("get_indexer_status must return structured content")
+        statuses = IndexerStatusResults.model_validate(status_content)
+        self.assertEqual(statuses.total, 1)
+        self.assertEqual(statuses.statuses[0].indexer_id, 7)
+        self.assertIsNotNone(statuses.statuses[0].disabled_until)
 
     async def test_discovery_round_trip_omits_provider_configuration(self) -> None:
         async def prowlarr_handler(request: httpx.Request) -> httpx.Response:

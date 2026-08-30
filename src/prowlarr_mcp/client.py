@@ -13,8 +13,10 @@ from prowlarr_mcp.errors import (
 )
 from prowlarr_mcp.models import (
     ApiDownloadClient,
+    ApiHealthCheck,
     ApiIndexer,
     ApiIndexerCategory,
+    ApiIndexerStatus,
     ApiRelease,
     ApiReleaseSubmission,
     SearchType,
@@ -30,6 +32,8 @@ _RELEASE_LIST = TypeAdapter(list[ApiRelease])
 _INDEXER_LIST = TypeAdapter(list[ApiIndexer])
 _CATEGORY_LIST = TypeAdapter(list[ApiIndexerCategory])
 _DOWNLOAD_CLIENT_LIST = TypeAdapter(list[ApiDownloadClient])
+_HEALTH_CHECK_LIST = TypeAdapter(list[ApiHealthCheck])
+_INDEXER_STATUS_LIST = TypeAdapter(list[ApiIndexerStatus])
 
 
 class ProwlarrClient:
@@ -147,6 +151,30 @@ class ProwlarrClient:
         except ValidationError as exc:
             raise ProwlarrResponseError(
                 "Prowlarr returned an invalid release submission response"
+            ) from exc
+
+    async def get_health(self) -> list[ApiHealthCheck]:
+        response = await self._get(
+            "api/v1/health",
+            operation="health check",
+        )
+        try:
+            return _HEALTH_CHECK_LIST.validate_json(response.content)
+        except ValidationError as exc:
+            raise ProwlarrResponseError(
+                "Prowlarr returned an invalid health response"
+            ) from exc
+
+    async def get_indexer_status(self) -> list[ApiIndexerStatus]:
+        response = await self._get(
+            "api/v1/indexerstatus",
+            operation="indexer status check",
+        )
+        try:
+            return _INDEXER_STATUS_LIST.validate_json(response.content)
+        except ValidationError as exc:
+            raise ProwlarrResponseError(
+                "Prowlarr returned an invalid indexer status response"
             ) from exc
 
     async def _get(

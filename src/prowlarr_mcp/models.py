@@ -27,6 +27,13 @@ class IndexerPrivacy(StrEnum):
     PRIVATE = "private"
 
 
+class HealthCheckResult(StrEnum):
+    OK = "ok"
+    NOTICE = "notice"
+    WARNING = "warning"
+    ERROR = "error"
+
+
 class ApiModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -89,6 +96,20 @@ class ApiReleaseSubmission(ApiModel):
     indexer_id: int
     guid: str
     download_client_id: int | None = None
+
+
+class ApiHealthCheck(ApiModel):
+    source: str | None = None
+    type: HealthCheckResult = HealthCheckResult.OK
+    message: str | None = None
+    wiki_url: str | None = None
+
+
+class ApiIndexerStatus(ApiModel):
+    indexer_id: int
+    disabled_till: datetime | None = None
+    most_recent_failure: datetime | None = None
+    initial_failure: datetime | None = None
 
 
 class ApiRelease(ApiModel):
@@ -160,6 +181,30 @@ class ReleaseSubmissionResult(BaseModel):
     indexer_id: int
     guid: str
     download_client_id: int | None
+
+
+class HealthCheckSummary(BaseModel):
+    source: str | None
+    severity: HealthCheckResult
+    message: str | None
+    wiki_url: str | None
+
+
+class HealthResults(BaseModel):
+    total: int
+    checks: list[HealthCheckSummary]
+
+
+class IndexerStatusSummary(BaseModel):
+    indexer_id: int
+    disabled_until: datetime | None
+    most_recent_failure: datetime | None
+    initial_failure: datetime | None
+
+
+class IndexerStatusResults(BaseModel):
+    total: int
+    statuses: list[IndexerStatusSummary]
 
 
 class ReleaseSummary(BaseModel):

@@ -51,6 +51,8 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
                     "list_categories",
                     "list_download_clients",
                     "grab_release",
+                    "get_health",
+                    "get_indexer_status",
                 },
             )
             schema = tools_by_name["search_releases"].inputSchema["properties"]
@@ -121,6 +123,20 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 download_clients.structured_content,
                 {"total": 0, "download_clients": []},
+            )
+
+            health = await client.call_tool("get_health", {})
+            self.assertFalse(health.is_error)
+            self.assertEqual(
+                health.structured_content,
+                {"total": 0, "checks": []},
+            )
+
+            indexer_status = await client.call_tool("get_indexer_status", {})
+            self.assertFalse(indexer_status.is_error)
+            self.assertEqual(
+                indexer_status.structured_content,
+                {"total": 0, "statuses": []},
             )
 
             invalid = await client.call_tool(

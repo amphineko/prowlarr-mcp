@@ -8,16 +8,20 @@ from prowlarr_mcp.models import (
     ApiCategory,
     ApiDownloadClient,
     ApiDownloadClientCategory,
+    ApiHealthCheck,
     ApiIndexer,
     ApiIndexerCapabilities,
     ApiIndexerCategory,
+    ApiIndexerStatus,
     ApiRelease,
     ApiReleaseSubmission,
     DownloadProtocol,
+    HealthCheckResult,
     IndexerPrivacy,
     SearchType,
 )
 from prowlarr_mcp.service import (
+    DiagnosticsService,
     DiscoveryService,
     ReleaseSubmissionService,
     SearchService,
@@ -72,6 +76,28 @@ class StubSubmissionClient:
         )
         self.submissions.append(submission)
         return submission
+
+
+class StubDiagnosticsClient:
+    async def get_health(self) -> list[ApiHealthCheck]:
+        return [
+            ApiHealthCheck(
+                source="IndexerStatusCheck",
+                type=HealthCheckResult.WARNING,
+                message="Some indexers are unavailable",
+                wiki_url="https://wiki.servarr.com/prowlarr/system",
+            )
+        ]
+
+    async def get_indexer_status(self) -> list[ApiIndexerStatus]:
+        return [
+            ApiIndexerStatus(
+                indexer_id=7,
+                disabled_till=datetime(2026, 8, 30, 17, tzinfo=UTC),
+                most_recent_failure=datetime(2026, 8, 30, 16, tzinfo=UTC),
+                initial_failure=datetime(2026, 8, 29, 12, tzinfo=UTC),
+            )
+        ]
 
 
 class SearchServiceTest(unittest.IsolatedAsyncioTestCase):
@@ -183,6 +209,29 @@ class ReleaseSubmissionServiceTest(unittest.IsolatedAsyncioTestCase):
                 guid="release-guid",
                 download_client_id=0,
             )
+
+
+class DiagnosticsServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_maps_health_checks(self) -> None:
+        service = DiagnosticsService(StubDiagnosticsClient())
+
+        result = await service.get_health()
+
+        self.assertEqual(result.total, 1)
+        self.assertEqual(result.checks[0].source, "IndexerStatusCheck")
+        self.assertEqual(result.checks[0].severity, HealthCheckResult.WARNING)
+
+    async def test_maps_blocked_indexer_status(self) -> None:
+        service = DiagnosticsService(StubDiagnosticsClient())
+
+        result = await service.get_indexer_status()
+
+        self.assertEqual(result.total, 1)
+        self.assertEqual(result.statuses[0].indexer_id, 7)
+        self.assertEqual(
+            result.statuses[0].disabled_until,
+            datetime(2026, 8, 30, 17, tzinfo=UTC),
+        )
 
 
 class DiscoveryServiceTest(unittest.IsolatedAsyncioTestCase):
