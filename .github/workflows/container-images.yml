@@ -13,10 +13,12 @@ permissions: {}
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  MCP_TEST_IMAGE: prowlarr-mcp:e2e
+  # LinuxServer Prowlarr 2.5.2.5491-ls157.
+  PROWLARR_TEST_IMAGE: lscr.io/linuxserver/prowlarr@sha256:ab91301778251f82a31bbfc87f0497376d59e84439d9a1ceff6a61d594d1e3d7
 
 jobs:
   build:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,12 +38,40 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
+          load: true
           push: false
+          tags: ${{ env.MCP_TEST_IMAGE }}
           cache-from: type=gha,scope=container-image
           cache-to: type=gha,mode=max,scope=container-image
 
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: uv sync --locked
+
+      - name: Pull Prowlarr test image
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if docker pull "${PROWLARR_TEST_IMAGE}"; then
+              exit 0
+            fi
+            sleep "$((attempt * 2))"
+          done
+          exit 1
+
+      - name: Test container image against Prowlarr
+        run: |
+          uv run python tests/image_e2e.py \
+            --mcp-image "${MCP_TEST_IMAGE}" \
+            --prowlarr-image "${PROWLARR_TEST_IMAGE}"
+
   publish:
     if: github.event_name == 'push'
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       attestations: write
