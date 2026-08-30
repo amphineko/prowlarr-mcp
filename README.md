@@ -99,7 +99,7 @@ with an HTTP status code.
 - [x] **v0.1:** Search releases through configured Prowlarr indexers.
 - [x] **v0.2:** Discover search and download capabilities, and submit a
   selected release to a configured download client.
-- [x] Inspect Prowlarr health and indexer status.
+- [x] **v0.2.1:** Inspect Prowlarr health and indexer status.
 - [ ] Inspect Prowlarr search history.
 
 ## Testing with the MCP client
