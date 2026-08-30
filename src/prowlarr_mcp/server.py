@@ -14,12 +14,15 @@ from prowlarr_mcp.errors import ProwlarrError
 from prowlarr_mcp.models import (
     CategoryResults,
     DownloadClientResults,
+    HealthResults,
     IndexerResults,
+    IndexerStatusResults,
     ReleaseSubmissionResult,
     SearchResults,
     SearchType,
 )
 from prowlarr_mcp.service import (
+    DiagnosticsService,
     DiscoveryService,
     ReleaseSubmissionService,
     SearchService,
@@ -40,6 +43,7 @@ def create_server(
     search_service = SearchService(client, max_results=settings.max_results)
     discovery_service = DiscoveryService(client)
     submission_service = ReleaseSubmissionService(client)
+    diagnostics_service = DiagnosticsService(client)
 
     @lifespan
     async def server_lifespan(_: FastMCP[None]) -> AsyncGenerator[None]:
@@ -53,7 +57,8 @@ def create_server(
         version=__version__,
         instructions=(
             "Search releases, inspect search and download capabilities, and submit "
-            "selected releases through Prowlarr."
+            "selected releases through Prowlarr. Diagnose Prowlarr health and "
+            "blocked indexers."
         ),
         lifespan=server_lifespan,
     )
@@ -178,6 +183,40 @@ def create_server(
                 download_client_id=download_client_id,
             )
         except (ProwlarrError, ValueError) as exc:
+            raise ToolError(str(exc)) from exc
+
+    @mcp.tool(
+        annotations={
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        }
+    )
+    async def get_health() -> HealthResults:
+        """Return current Prowlarr health checks and their severity."""
+        try:
+            return await diagnostics_service.get_health()
+        except ProwlarrError as exc:
+            raise ToolError(str(exc)) from exc
+
+    @mcp.tool(
+        annotations={
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        }
+    )
+    async def get_indexer_status() -> IndexerStatusResults:
+        """Return failure and retry timing for currently blocked indexers.
+
+        Prowlarr returns only blocked indexers. Resolve indexer_id values with
+        list_indexers; an absent indexer has no current blocked status.
+        """
+        try:
+            return await diagnostics_service.get_indexer_status()
+        except ProwlarrError as exc:
             raise ToolError(str(exc)) from exc
 
     return mcp

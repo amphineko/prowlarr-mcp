@@ -4,15 +4,21 @@ from typing import TYPE_CHECKING, Protocol
 
 from prowlarr_mcp.models import (
     ApiDownloadClient,
+    ApiHealthCheck,
     ApiIndexer,
     ApiIndexerCategory,
+    ApiIndexerStatus,
     ApiRelease,
     ApiReleaseSubmission,
     Category,
     CategoryResults,
     DownloadClientResults,
     DownloadClientSummary,
+    HealthCheckSummary,
+    HealthResults,
     IndexerResults,
+    IndexerStatusResults,
+    IndexerStatusSummary,
     IndexerSummary,
     ReleaseSubmissionResult,
     ReleaseSummary,
@@ -54,6 +60,12 @@ class ReleaseSubmissionClient(Protocol):
         guid: str,
         download_client_id: int | None,
     ) -> ApiReleaseSubmission: ...
+
+
+class DiagnosticsClient(Protocol):
+    async def get_health(self) -> list[ApiHealthCheck]: ...
+
+    async def get_indexer_status(self) -> list[ApiIndexerStatus]: ...
 
 
 class SearchService:
@@ -149,6 +161,37 @@ class ReleaseSubmissionService:
             guid=submitted.guid,
             download_client_id=submitted.download_client_id,
         )
+
+
+class DiagnosticsService:
+    def __init__(self, client: DiagnosticsClient) -> None:
+        self._client = client
+
+    async def get_health(self) -> HealthResults:
+        checks = await self._client.get_health()
+        summaries = [
+            HealthCheckSummary(
+                source=check.source,
+                severity=check.type,
+                message=check.message,
+                wiki_url=check.wiki_url,
+            )
+            for check in checks
+        ]
+        return HealthResults(total=len(summaries), checks=summaries)
+
+    async def get_indexer_status(self) -> IndexerStatusResults:
+        statuses = await self._client.get_indexer_status()
+        summaries = [
+            IndexerStatusSummary(
+                indexer_id=status.indexer_id,
+                disabled_until=status.disabled_till,
+                most_recent_failure=status.most_recent_failure,
+                initial_failure=status.initial_failure,
+            )
+            for status in statuses
+        ]
+        return IndexerStatusResults(total=len(summaries), statuses=summaries)
 
 
 class DiscoveryService:

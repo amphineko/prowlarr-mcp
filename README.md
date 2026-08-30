@@ -65,6 +65,11 @@ Prowlarr select its configured default. Search results are cached by Prowlarr
 for about 30 minutes; search again if submission reports that the release has
 expired from the cache.
 
+`get_health` returns Prowlarr's current health checks with their severity,
+message, source, and optional help URL. `get_indexer_status` returns failure and
+retry timing only for currently blocked indexers; resolve its numeric IDs with
+`list_indexers`.
+
 `search_releases` accepts:
 
 - `query`: text query; an empty string requests recent releases.
@@ -94,7 +99,8 @@ with an HTTP status code.
 - [x] **v0.1:** Search releases through configured Prowlarr indexers.
 - [x] **v0.2:** Discover search and download capabilities, and submit a
   selected release to a configured download client.
-- [ ] Inspect Prowlarr health, indexer status, and search history.
+- [x] Inspect Prowlarr health and indexer status.
+- [ ] Inspect Prowlarr search history.
 
 ## Testing with the MCP client
 
